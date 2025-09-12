@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Playground Bot (WS Realtime)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #status { font-weight: bold; }
+    #conversation { border:1px solid #ccc; padding:10px; height:200px; overflow:auto; margin-top:10px; }
+    button { margin-right:10px; }
+  </style>
+</head>
+<body>
+  <h2>Playground Bot (WS Realtime)</h2>
+  <div>Status: <span id="status">Connecting...</span></div>
+  <div>Timer: <span id="timer">00:00</span></div>
+  <div>
+    <button id="startBtn" disabled>Call</button>
+    <button id="stopBtn" disabled>End</button>
+  </div>
+  <div id="conversation"><div><strong>Bot:</strong> Hello! Press Call to start.</div></div>
+
+  <script>
+    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";  // your WS endpoint
+    let ws;
+    let audioContext, scriptNode, micStream;
+    let registered = false;
+    let startTime, timerInterval;
+
+    const statusEl = document.getElementById('status');
+    const timerEl = document.getElementById('timer');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const conv = document.getElementById('conversation');
+
+    function log(role, text) {
+      const d = document.createElement('div');
+      d.innerHTML = `<strong>${role}:</strong> ${text}`;
+      conv.appendChild(d);
+      conv.scrollTop = conv.scrollHeight;
+    }
+
+    function connectWS() {
+      statusEl.innerText = 'Connecting...';
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        statusEl.innerText = 'Connected ✅';
+        startBtn.disabled = false;
+        console.log('WS open');
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          console.log('WS text:', msg);
+          if (msg.type === 'welcome') {
+            console.log('Welcome:', msg.message);
+          } else if (msg.type === 'registered') {
+            registered = true;
+            statusEl.innerText = 'Session registered ✅';
+            startTimer();
+          } else if (msg.type === 'transcript') {
+            log('User', msg.text);
+          } else if (msg.type === 'bot_text') {
+            log('Bot', msg.text);
+            speak(msg.text);
+          } else if (msg.type === 'error') {
+            statusEl.innerText = 'Error: ' + msg.message;
+          }
+        } else if (ev.data instanceof ArrayBuffer) {
+          // (if you later send audio from bot)
+          console.log('Received binary from server, length=', ev.data.byteLength);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('WS error', err);
+        statusEl.innerText = 'Connection error';
+      };
+
+      ws.onclose = () => {
+        console.log('WS closed');
+        statusEl.innerText = 'Disconnected';
+        registered = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        stopTimer();
+      };
+    }
+
+    connectWS();
+
+    startBtn.addEventListener('click', async () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        statusEl.innerText = 'WS not open';
+        return;
+      }
+      ws.send(JSON.stringify({ type: 'register' }));
+      statusEl.innerText = 'Registering session...';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      await startMic();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      ws.send(JSON.stringify({ type: 'stop' }));
+      stopMic();
+      registered = false;
+      statusEl.innerText = 'Call ended';
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+      stopTimer();
+    });
+
+    async function startMic() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        const source = audioContext.createMediaStreamSource(micStream);
+        scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+
+        scriptNode.onaudioprocess = (e) => {
+          const float32 = e.inputBuffer.getChannelData(0);
+          const buf = floatTo16BitPCM(float32);
+          if (ws.readyState === WebSocket.OPEN && registered) {
+            ws.send(buf);
+          }
+        };
+
+        source.connect(scriptNode);
+        scriptNode.connect(audioContext.destination);
+
+        statusEl.innerText = 'Mic recording (streaming PCM)…';
+      } catch (err) {
+        console.error('Mic error:', err);
+        statusEl.innerText = 'Mic error';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    }
+
+    function stopMic() {
+      try {
+        if (scriptNode) { scriptNode.disconnect(); scriptNode.onaudioprocess = null; }
+        if (audioContext) audioContext.close();
+        if (micStream) micStream.getTracks().forEach(t => t.stop());
+      } catch (_) {}
+    }
+
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      let offset = 0;
+      for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return buffer;
+    }
+
+    function speak(text) {
+      try {
+        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utter);
+      } catch (e) {
+        console.warn('TTS speak fail', e);
+      }
+    }
+
+    function startTimer() {
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        const diff = Date.now() - startTime;
+        const m = String(Math.floor(diff / 60000)).padStart(2, '0');
+        const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+        timerEl.innerText = `${m}:${s}`;
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerEl.innerText = '00:00';
+    }
+  </script>
+</body>
+</html>
