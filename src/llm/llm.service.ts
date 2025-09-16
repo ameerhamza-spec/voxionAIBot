@@ -31,6 +31,7 @@ export class LlmService {
         },
       );
 
+      // console.log('Groq API response:', response.data);
       return response.data.choices[0].message.content;
     } catch (error) {
       this.logger.error('Error calling Groq API:', error.response?.data || error.message);

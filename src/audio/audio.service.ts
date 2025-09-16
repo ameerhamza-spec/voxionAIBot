@@ -1,54 +1,43 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+// src/audio/audio.service.ts
+import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
 export class AudioService {
-  private readonly logger = new Logger(AudioService.name);
+    async textToAudio(text: string): Promise<string> {
+        const response = await fetch(
+            'https://api.deepgram.com/v1/speak?encoding=mulaw&sample_rate=8000',
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text }),
+            },
+        );
 
-  constructor(private readonly configService: ConfigService) {}
+        if (!response.ok) {
+            throw new Error(
+                `Deepgram TTS failed: ${response.status} ${response.statusText}`,
+            );
+        }
 
-  async textToAudio(text: string): Promise<string> {
-    const apiKey = this.configService.get<string>('deepgram.apiKey');
-    
-    const response = await fetch(
-      'https://api.deepgram.com/v1/speak?encoding=mulaw&sample_rate=8000',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Token ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      },
-    );
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-    if (!response.ok) {
-      throw new Error(
-        `Deepgram TTS failed: ${response.status} ${response.statusText}`,
-      );
+        return buffer.toString('base64'); // ✅ Twilio expects mulaw base64
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    async saveAudioToFile(base64Mulaw: string, filename: string) {
+        const buffer = Buffer.from(base64Mulaw, 'base64');
+        const outPath = path.join('recordings', filename);
 
-    return buffer.toString('base64');
-  }
-
-  async saveAudioToFile(base64Mulaw: string, filename: string): Promise<string> {
-    const buffer = Buffer.from(base64Mulaw, 'base64');
-    const recordingsDir = 'recordings';
-    
-    // Ensure recordings directory exists
-    if (!fs.existsSync(recordingsDir)) {
-      fs.mkdirSync(recordingsDir, { recursive: true });
+        fs.writeFileSync(outPath, buffer);
+        return outPath;
     }
-    
-    const outPath = path.join(recordingsDir, filename);
-    fs.writeFileSync(outPath, buffer);
-    
-    this.logger.log(`Audio saved to: ${outPath}`);
-    return outPath;
-  }
+
+
+
 }

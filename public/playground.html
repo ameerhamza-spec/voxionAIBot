@@ -1,16 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Playground Bot (WS Realtime)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    #status { font-weight: bold; }
-    #conversation { border:1px solid #ccc; padding:10px; height:200px; overflow:auto; margin-top:10px; }
-    button { margin-right:10px; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    #status {
+      font-weight: bold;
+    }
+
+    #conversation {
+      border: 1px solid #ccc;
+      padding: 10px;
+      height: 200px;
+      overflow: auto;
+      margin-top: 10px;
+    }
+
+    button {
+      margin-right: 10px;
+    }
   </style>
 </head>
+
 <body>
   <h2>Playground Bot (WS Realtime)</h2>
   <div>Status: <span id="status">Connecting...</span></div>
@@ -19,7 +37,9 @@
     <button id="startBtn" disabled>Call</button>
     <button id="stopBtn" disabled>End</button>
   </div>
-  <div id="conversation"><div><strong>Bot:</strong> Hello! Press Call to start.</div></div>
+  <div id="conversation">
+    <div><strong>Bot:</strong> Hello! Press Call to start.</div>
+  </div>
 
   <script>
     const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";  // your WS endpoint
@@ -186,5 +206,11 @@
       timerEl.innerText = '00:00';
     }
   </script>
+
+
+
+
+
 </body>
+
 </html>

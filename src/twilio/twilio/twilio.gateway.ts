@@ -10,6 +10,7 @@ import twilio from 'twilio';
 import { LlmService } from 'src/llm/llm.service';
 import { DeepgramService } from 'src/deepgram/deepgram.service';
 import { AudioService } from 'src/audio/audio.service';
+import { LatencyTracker } from 'src/utils/latency.util';
 
 
 const client = twilio(process.env.TWILIO_SID!, process.env.TWILIO_AUTH_TOKEN!);
@@ -155,31 +156,84 @@ export class TwilioWebSocketGateway {
     const entry = { text, isFinal, ts: new Date().toISOString() };
     call.transcriptHistory.push(entry);
 
+    //     if (isFinal) {
+    //       this.logger.log(`🗣 Caller (${streamSid}): ${text}`);
+
+    //       // ✅ Call LLM with short response constraint
+    //       const reply = await this.llmService.generateResponse([
+    //         {
+    //           role: 'system',
+    //           content: `You are a friendly and professional hotel booking assistant for **Axion Hotel**. 
+    // - Location: Lake City.  
+    // - Your job: help guests book rooms, answer questions about availability, check-in/check-out times, and services.  
+    // - Speak in a natural, conversational tone (like a real human receptionist).  
+    // - Always guide the user politely and keep responses short and clear.`
+    //         },
+    //         { role: 'user', content: text },
+    //       ]);
+
+
+    //       this.logger.log(`🤖 Bot: ${reply}`);
+
+    //       try {
+    //         const audioPayloadBase64Mulaw = await this.audioService.textToAudio(reply);
+
+    //         const filename = `bot_reply_${Date.now()}.mulaw`;
+    //         await this.audioService.saveAudioToFile(audioPayloadBase64Mulaw, filename);
+
+    //         const writer = this.wavWriters.get(streamSid);
+    //         if (writer) {
+    //           try {
+    //             const botMulawBuffer = Buffer.from(audioPayloadBase64Mulaw, 'base64');
+    //             writer.writeMulaw(botMulawBuffer);
+    //           } catch (err: any) {
+    //             this.logger.error(
+    //               `Failed to write bot audio into wav for ${streamSid}: ${err?.message}`,
+    //             );
+    //           }
+    //         }
+
+    //         this.sendAudioToTwilio(streamSid, audioPayloadBase64Mulaw);
+    //       } catch (e: any) {
+    //         this.logger.error(`TTS failed: ${e.message}`);
+    //       }
+    //     } 
+
     if (isFinal) {
       this.logger.log(`🗣 Caller (${streamSid}): ${text}`);
 
-      // ✅ Call LLM with short response constraint
-      const reply = await this.llmService.generateResponse([
-        {
-          role: 'system',
-          content: `You are a friendly and professional hotel booking assistant for **Axion Hotel**. 
-- Location: Lake City.  
-- Your job: help guests book rooms, answer questions about availability, check-in/check-out times, and services.  
-- Speak in a natural, conversational tone (like a real human receptionist).  
-- Always guide the user politely and keep responses short and clear.`
-        },
-        { role: 'user', content: text },
-      ]);
+      // 🔥 Start total pipeline timer
+      const pipelineTracker = new LatencyTracker("Full Pipeline");
+
+      // ✅ LLM latency
+
+const reply = await LatencyTracker.track("Groq LLM", () =>
+  this.llmService.generateResponse([
+    {
+      role: 'system',
+      content: `You are a polite hotel assistant for Axion Hotel in Lake City.  
+- Help with room booking, availability, check-in/out, and services.  
+- Reply naturally, like a receptionist.  
+- Keep answers short, clear, and to the point.`
+    },
+    { role: 'user', content: text },
+  ])
+);
 
 
       this.logger.log(`🤖 Bot: ${reply}`);
 
       try {
-        const audioPayloadBase64Mulaw = await this.audioService.textToAudio(reply);
+        // ✅ TTS latency
+        const audioPayloadBase64Mulaw = await LatencyTracker.track("Deepgram TTS", () =>
+          this.audioService.textToAudio(reply)
+        );
 
+        // save to file
         const filename = `bot_reply_${Date.now()}.mulaw`;
         await this.audioService.saveAudioToFile(audioPayloadBase64Mulaw, filename);
 
+        // write to WAV recording
         const writer = this.wavWriters.get(streamSid);
         if (writer) {
           try {
@@ -192,11 +246,19 @@ export class TwilioWebSocketGateway {
           }
         }
 
+        // send to Twilio
         this.sendAudioToTwilio(streamSid, audioPayloadBase64Mulaw);
       } catch (e: any) {
         this.logger.error(`TTS failed: ${e.message}`);
       }
-    } else {
+
+      // 🔥 End total pipeline
+      pipelineTracker.end();
+    }
+
+
+
+    else {
       this.logger.debug(`[interim] ${text}`);
     }
   }
@@ -227,3 +289,5 @@ export class TwilioWebSocketGateway {
   }
 
 }
+
+
