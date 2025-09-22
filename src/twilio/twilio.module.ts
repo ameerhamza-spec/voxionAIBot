@@ -5,9 +5,10 @@ import { DeepgramModule } from '../deepgram/deepgram.module';
 import { AudioModule } from '../audio/audio.module';
 import { LlmModule } from '../llm/llm.module';
 import { TwilioWebSocketGateway } from './twilio/twilio.gateway';
+import { ElevenlabsModule } from 'src/elevenlabs/elevenlabs.module';
 
 @Module({
-  imports: [DeepgramModule, AudioModule, LlmModule],
+  imports: [DeepgramModule, AudioModule, LlmModule, ElevenlabsModule],
   controllers: [TwilioController],
   providers: [TwilioService, TwilioWebSocketGateway],
   exports: [TwilioService],

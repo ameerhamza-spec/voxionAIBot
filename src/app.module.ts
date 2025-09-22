@@ -7,6 +7,7 @@ import { AudioModule } from './audio/audio.module';
 import { LlmModule } from './llm/llm.module';
 import configuration from './config/configuration';
 import { PlaygroundModule } from './playground/playground.module';
+import { ElevenlabsModule } from './elevenlabs/elevenlabs.module';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { PlaygroundModule } from './playground/playground.module';
     DeepgramModule,
     AudioModule,
     LlmModule, 
-    PlaygroundModule
+    PlaygroundModule, ElevenlabsModule
   ],
 })
 export class AppModule {}

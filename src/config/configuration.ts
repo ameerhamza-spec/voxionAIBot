@@ -8,6 +8,9 @@ export default () => ({
   deepgram: {
     apiKey: process.env.DEEPGRAM_API_KEY,
   },
+  elevenlabs: {
+    apiKey: process.env.ELVENLABS_API_KEY,
+  },
   groq: {
     apiKey: process.env.GROQ_API_KEY,
     baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',

@@ -7,46 +7,187 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    h2 {
+      margin-bottom: 10px;
     }
 
     #status {
       font-weight: bold;
     }
 
-    #conversation {
-      border: 1px solid #ccc;
-      padding: 10px;
-      height: 200px;
-      overflow: auto;
-      margin-top: 10px;
+    #controls {
+      margin: 20px 0;
     }
 
     button {
-      margin-right: 10px;
+      border: none;
+      padding: 15px 25px;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      transition: transform 0.2s, background 0.3s;
+    }
+
+    #startBtn {
+      background: #28c76f;
+      color: white;
+      position: relative;
+      animation: pulse 1.5s infinite;
+    }
+
+    #stopBtn {
+      background: #ea5455;
+      color: white;
+      display: none;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(40, 199, 111, 0.7);
+      }
+
+      70% {
+        box-shadow: 0 0 0 20px rgba(40, 199, 111, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(40, 199, 111, 0);
+      }
+    }
+
+    #conversation {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 20px;
+      height: 400px;
+      width: 500px;
+      overflow-y: auto;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+
+      /* Hidden state */
+      opacity: 0;
+      transform: scale(0.9) translateY(40px);
+      transition: all 0.6s cubic-bezier(0.25, 1, 0.3, 1);
+    }
+
+    #conversation.active {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+      animation: glow 2s infinite alternate;
+    }
+
+    @keyframes glow {
+      from {
+        box-shadow: 0 0 10px rgba(102, 126, 234, 0.4),
+          0 0 20px rgba(118, 75, 162, 0.3);
+      }
+
+      to {
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.7),
+          0 0 35px rgba(118, 75, 162, 0.6);
+      }
+    }
+
+    .msg {
+      margin: 8px 0;
+      display: flex;
+      align-items: flex-start;
+    }
+
+    .msg.bot {
+      justify-content: flex-start;
+    }
+
+    .msg.user {
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      padding: 10px 15px;
+      border-radius: 18px;
+      max-width: 70%;
+      line-height: 1.4;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .bot .bubble {
+      background: #e0e0e0;
+      color: #333;
+      border-bottom-left-radius: 0;
+    }
+
+    .user .bubble {
+      background: #28c76f;
+      color: #fff;
+      border-bottom-right-radius: 0;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    #header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    #timer {
+      font-weight: bold;
     }
   </style>
 </head>
 
 <body>
-  <h2>Playground Bot (WS Realtime)</h2>
-  <div>Status: <span id="status">Connecting...</span></div>
-  <div>Timer: <span id="timer">00:00</span></div>
-  <div>
-    <button id="startBtn" disabled>Call</button>
-    <button id="stopBtn" disabled>End</button>
+  <div id="header">
+    <h2>Playground Bot 🤖</h2>
+    <div>Status: <span id="status">Connecting...</span></div>
+    <div>Timer: <span id="timer">00:00</span></div>
   </div>
+
+  <div id="controls">
+    <button id="startBtn" disabled>📞 Call</button>
+    <button id="stopBtn">🔴 End</button>
+  </div>
+
   <div id="conversation">
-    <div><strong>Bot:</strong> Hello! Press Call to start.</div>
+    <div class="msg bot">
+      <div class="bubble"><strong>Bot:</strong> Hello! Press Call to start.</div>
+    </div>
   </div>
 
   <script>
-    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";  // your WS endpoint
+    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
     let ws;
     let audioContext, scriptNode, micStream;
     let registered = false;
     let startTime, timerInterval;
+    let isSpeaking = false;
 
     const statusEl = document.getElementById('status');
     const timerEl = document.getElementById('timer');
@@ -55,9 +196,10 @@
     const conv = document.getElementById('conversation');
 
     function log(role, text) {
-      const d = document.createElement('div');
-      d.innerHTML = `<strong>${role}:</strong> ${text}`;
-      conv.appendChild(d);
+      const msg = document.createElement('div');
+      msg.classList.add('msg', role.toLowerCase());
+      msg.innerHTML = `<div class="bubble"><strong>${role}:</strong> ${text}</div>`;
+      conv.appendChild(msg);
       conv.scrollTop = conv.scrollHeight;
     }
 
@@ -69,44 +211,32 @@
       ws.onopen = () => {
         statusEl.innerText = 'Connected ✅';
         startBtn.disabled = false;
-        console.log('WS open');
       };
 
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           const msg = JSON.parse(ev.data);
-          console.log('WS text:', msg);
-          if (msg.type === 'welcome') {
-            console.log('Welcome:', msg.message);
-          } else if (msg.type === 'registered') {
+
+          if (msg.type === 'registered') {
             registered = true;
             statusEl.innerText = 'Session registered ✅';
             startTimer();
+            conv.classList.add('active');
           } else if (msg.type === 'transcript') {
             log('User', msg.text);
           } else if (msg.type === 'bot_text') {
             log('Bot', msg.text);
             speak(msg.text);
-          } else if (msg.type === 'error') {
-            statusEl.innerText = 'Error: ' + msg.message;
           }
-        } else if (ev.data instanceof ArrayBuffer) {
-          // (if you later send audio from bot)
-          console.log('Received binary from server, length=', ev.data.byteLength);
         }
       };
 
-      ws.onerror = (err) => {
-        console.error('WS error', err);
-        statusEl.innerText = 'Connection error';
-      };
-
       ws.onclose = () => {
-        console.log('WS closed');
         statusEl.innerText = 'Disconnected';
         registered = false;
         startBtn.disabled = false;
-        stopBtn.disabled = true;
+        stopBtn.style.display = 'none';
+        conv.classList.remove('active');
         stopTimer();
       };
     }
@@ -114,14 +244,10 @@
     connectWS();
 
     startBtn.addEventListener('click', async () => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        statusEl.innerText = 'WS not open';
-        return;
-      }
       ws.send(JSON.stringify({ type: 'register' }));
       statusEl.innerText = 'Registering session...';
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
       await startMic();
     });
 
@@ -130,44 +256,41 @@
       stopMic();
       registered = false;
       statusEl.innerText = 'Call ended';
-      stopBtn.disabled = true;
-      startBtn.disabled = false;
+      stopBtn.style.display = 'none';
+      startBtn.style.display = 'inline-block';
       stopTimer();
     });
 
     async function startMic() {
-      try {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-        const source = audioContext.createMediaStreamSource(micStream);
-        scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+      const source = audioContext.createMediaStreamSource(micStream);
 
-        scriptNode.onaudioprocess = (e) => {
-          const float32 = e.inputBuffer.getChannelData(0);
-          const buf = floatTo16BitPCM(float32);
-          if (ws.readyState === WebSocket.OPEN && registered) {
-            ws.send(buf);
-          }
-        };
+      scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+      scriptNode.onaudioprocess = (e) => {
+        if (isSpeaking) return;
+        const float32 = e.inputBuffer.getChannelData(0);
+        const buf = floatTo16BitPCM(float32);
+        if (ws.readyState === WebSocket.OPEN && registered) {
+          ws.send(buf);
+        }
+      };
 
-        source.connect(scriptNode);
-        scriptNode.connect(audioContext.destination);
-
-        statusEl.innerText = 'Mic recording (streaming PCM)…';
-      } catch (err) {
-        console.error('Mic error:', err);
-        statusEl.innerText = 'Mic error';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-      }
+      source.connect(scriptNode);
+      scriptNode.connect(audioContext.destination);
+      statusEl.innerText = 'Mic recording…';
     }
 
     function stopMic() {
-      try {
-        if (scriptNode) { scriptNode.disconnect(); scriptNode.onaudioprocess = null; }
-        if (audioContext) audioContext.close();
-        if (micStream) micStream.getTracks().forEach(t => t.stop());
-      } catch (_) {}
+      if (scriptNode) { scriptNode.disconnect(); scriptNode.onaudioprocess = null; }
+      if (audioContext) audioContext.close();
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
     }
 
     function floatTo16BitPCM(float32Array) {
@@ -182,13 +305,12 @@
     }
 
     function speak(text) {
-      try {
-        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        window.speechSynthesis.speak(utter);
-      } catch (e) {
-        console.warn('TTS speak fail', e);
-      }
+      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+      isSpeaking = true;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.onend = () => isSpeaking = false;
+      utter.onerror = () => isSpeaking = false;
+      window.speechSynthesis.speak(utter);
     }
 
     function startTimer() {
@@ -206,11 +328,5 @@
       timerEl.innerText = '00:00';
     }
   </script>
-
-
-
-
-
 </body>
-
 </html>
