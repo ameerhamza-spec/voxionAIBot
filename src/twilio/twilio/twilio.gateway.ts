@@ -40,8 +40,7 @@ export class TwilioWebSocketGateway {
   constructor(
     private readonly deepgram: DeepgramService,  // Transcription service
     private readonly audioService: AudioService, // Text-to-Speech service
-    private readonly llmService: LlmService,     // LLM for generating bot replies
-    private readonly elevenlabsService: ElevenLabsService, // <-- new
+    private readonly llmService: LlmService,     // LLM for generating bot replie
   ) { }
 
   /**
@@ -220,10 +219,6 @@ export class TwilioWebSocketGateway {
         const audioPayloadBase64Mulaw = await LatencyTracker.track("Deepgram TTS", () =>
           this.audioService.textToAudio(reply)
         );
-
-        // const audioPayloadBase64Mulaw = await LatencyTracker.track("ElevenLabs TTS", () =>
-        //   this.elevenlabsService.textToAudio(reply)
-        // );
 
         // Save bot reply audio for debugging
         const filename = `bot_reply_${Date.now()}.mulaw`;
