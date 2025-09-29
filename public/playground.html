@@ -54,6 +54,18 @@
       display: none;
     }
 
+    #refreshBtn {
+      background: transparent;
+      color: white;
+      border: 2px solid white;
+      border-radius: 50%;
+      font-size: 18px;
+      padding: 5px 10px;
+      margin-left: 10px;
+      cursor: pointer;
+      display: none;
+    }
+
     button:hover {
       transform: scale(1.05);
     }
@@ -166,7 +178,10 @@
 <body>
   <div id="header">
     <h2>Playground Bot 🤖</h2>
-    <div>Status: <span id="status">Connecting...</span></div>
+    <div>
+      Status: <span id="status">Connecting...</span>
+      <button id="refreshBtn">🔄</button>
+    </div>
     <div>Timer: <span id="timer">00:00</span></div>
   </div>
 
@@ -194,6 +209,7 @@
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const conv = document.getElementById('conversation');
+    const refreshBtn = document.getElementById('refreshBtn');
 
     function log(role, text) {
       const msg = document.createElement('div');
@@ -205,12 +221,16 @@
 
     function connectWS() {
       statusEl.innerText = 'Connecting...';
+      refreshBtn.style.display = 'none';
+      startBtn.disabled = true;
+
       ws = new WebSocket(WS_URL);
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
         statusEl.innerText = 'Connected ✅';
         startBtn.disabled = false;
+        refreshBtn.style.display = 'none';
       };
 
       ws.onmessage = (ev) => {
@@ -234,14 +254,20 @@
       ws.onclose = () => {
         statusEl.innerText = 'Disconnected';
         registered = false;
-        startBtn.disabled = false;
+        startBtn.disabled = true;
         stopBtn.style.display = 'none';
         conv.classList.remove('active');
         stopTimer();
+        refreshBtn.style.display = 'inline-block'; // Show refresh button
       };
     }
 
     connectWS();
+
+    // Refresh button → reconnect
+    refreshBtn.addEventListener('click', () => {
+      connectWS();
+    });
 
     startBtn.addEventListener('click', async () => {
       ws.send(JSON.stringify({ type: 'register' }));
