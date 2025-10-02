@@ -8,6 +8,8 @@ import { LlmModule } from './llm/llm.module';
 import configuration from './config/configuration';
 import { PlaygroundModule } from './playground/playground.module';
 import { ElevenlabsModule } from './elevenlabs/elevenlabs.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -15,6 +17,9 @@ import { ElevenlabsModule } from './elevenlabs/elevenlabs.module';
       isGlobal: true,
       envFilePath: '.env',
       load: [configuration],
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'), // <-- serve public/ folder
     }),
     ScheduleModule.forRoot(),
     TwilioModule,
