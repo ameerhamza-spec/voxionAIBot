@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <title>Playground Bot (WS Realtime)</title>
@@ -8,245 +7,162 @@
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 0;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: #fff;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-start;
+      height:100vh;
+      margin:0;
+      padding:20px;
     }
+    h2 { margin-top:10px; }
 
-    h2 {
-      margin-bottom: 10px;
-    }
-
-    #status {
-      font-weight: bold;
-    }
+    #status { font-weight:600; }
 
     #controls {
-      margin: 20px 0;
+      margin:15px 0;
+      display:flex;
+      gap:15px;
     }
 
     button {
-      border: none;
-      padding: 15px 25px;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: bold;
-      transition: transform 0.2s, background 0.3s;
+      padding:12px 20px;
+      border:none;
+      border-radius:25px;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:600;
+      transition:all .3s ease;
+      box-shadow:0 4px 10px rgba(0,0,0,0.2);
     }
-
-    #startBtn {
-      background: #28c76f;
-      color: white;
-      position: relative;
-      animation: pulse 1.5s infinite;
-    }
-
-    #stopBtn {
-      background: #ea5455;
-      color: white;
-      display: none;
-    }
-
-    #refreshBtn {
-      background: transparent;
-      color: white;
-      border: 2px solid white;
-      border-radius: 50%;
-      font-size: 18px;
-      padding: 5px 10px;
-      margin-left: 10px;
-      cursor: pointer;
-      display: none;
-    }
-
-    button:hover {
-      transform: scale(1.05);
-    }
-
-    @keyframes pulse {
-      0% {
-        box-shadow: 0 0 0 0 rgba(40, 199, 111, 0.7);
-      }
-
-      70% {
-        box-shadow: 0 0 0 20px rgba(40, 199, 111, 0);
-      }
-
-      100% {
-        box-shadow: 0 0 0 0 rgba(40, 199, 111, 0);
-      }
-    }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    #startBtn { background:#28c76f; color:#fff; }
+    #startBtn:hover:not(:disabled) { background:#20a65b; }
+    #stopBtn { background:#ff4d4d; color:#fff; }
+    #stopBtn:hover { background:#d93636; }
+    #sendTextBtn { background:#4dabf7; color:#fff; }
+    #sendTextBtn:hover { background:#1c7ed6; }
 
     #conversation {
-      background: white;
-      color: #333;
-      border-radius: 16px;
-      padding: 20px;
-      height: 400px;
-      width: 500px;
-      overflow-y: auto;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-
-      /* Hidden state */
-      opacity: 0;
-      transform: scale(0.9) translateY(40px);
-      transition: all 0.6s cubic-bezier(0.25, 1, 0.3, 1);
+      background:white;
+      color:#333;
+      border-radius:16px;
+      padding:20px;
+      height:400px;
+      width:500px;
+      overflow-y:auto;
+      margin-top:10px;
+      box-shadow:0 6px 20px rgba(0,0,0,0.25);
+      display:flex;
+      flex-direction:column;
     }
-
-    #conversation.active {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-      animation: glow 2s infinite alternate;
-    }
-
-    @keyframes glow {
-      from {
-        box-shadow: 0 0 10px rgba(102, 126, 234, 0.4),
-          0 0 20px rgba(118, 75, 162, 0.3);
-      }
-
-      to {
-        box-shadow: 0 0 20px rgba(102, 126, 234, 0.7),
-          0 0 35px rgba(118, 75, 162, 0.6);
-      }
-    }
-
-    .msg {
-      margin: 8px 0;
-      display: flex;
-      align-items: flex-start;
-    }
-
-    .msg.bot {
-      justify-content: flex-start;
-    }
-
-    .msg.user {
-      justify-content: flex-end;
-    }
-
+    .msg { margin:8px 0; display:flex; }
+    .msg.bot { justify-content:flex-start; }
+    .msg.user { justify-content:flex-end; }
     .bubble {
-      padding: 10px 15px;
-      border-radius: 18px;
-      max-width: 70%;
-      line-height: 1.4;
-      animation: fadeIn 0.3s ease;
+      padding:10px 15px;
+      border-radius:18px;
+      max-width:70%;
+      font-size:15px;
+    }
+    .bot .bubble { background:#e0e0e0; color:#333; border-bottom-left-radius:0; }
+    .user .bubble { background:#28c76f; color:#fff; border-bottom-right-radius:0; }
+
+    #typing {
+      font-style:italic;
+      color:#666;
+      font-size:14px;
+      margin:5px 0 0 5px;
+      display:none;
     }
 
-    .bot .bubble {
-      background: #e0e0e0;
-      color: #333;
-      border-bottom-left-radius: 0;
+    /* Input box pinned under chat */
+    #textInputBox {
+      margin-top:8px;
+      display:flex;
+      width:500px;
+      gap:10px;
     }
-
-    .user .bubble {
-      background: #28c76f;
-      color: #fff;
-      border-bottom-right-radius: 0;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: scale(0.95);
-      }
-
-      to {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    #header {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-
-    #timer {
-      font-weight: bold;
+    #userText {
+      flex:1;
+      padding:12px;
+      border-radius:25px;
+      border:none;
+      font-size:15px;
+      outline:none;
     }
   </style>
 </head>
-
 <body>
-  <div id="header">
-    <h2>Playground Bot 🤖</h2>
-    <div>
-      Status: <span id="status">Connecting...</span>
-      <button id="refreshBtn">🔄</button>
-    </div>
-    <div>Timer: <span id="timer">00:00</span></div>
-  </div>
+  <h2>Playground Bot 🤖</h2>
+  <div>Status: <span id="status">Connecting...</span></div>
 
   <div id="controls">
     <button id="startBtn" disabled>📞 Call</button>
-    <button id="stopBtn">🔴 End</button>
+    <button id="stopBtn" style="display:none;">🔴 End</button>
   </div>
 
   <div id="conversation">
-    <div class="msg bot">
-      <div class="bubble"><strong>Bot:</strong> Hello! Press Call to start.</div>
-    </div>
+    <div class="msg bot"><div class="bubble"><strong>Bot:</strong> Hello! Press Call or type to start.</div></div>
+    <div id="typing">Bot is speaking…</div>
+  </div>
+
+  <div id="textInputBox">
+    <input id="userText" type="text" placeholder="Type your message...">
+    <button id="sendTextBtn">Send</button>
   </div>
 
   <script>
     const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
-    let ws;
-    let audioContext, scriptNode, micStream;
-    let registered = false;
-    let startTime, timerInterval;
-    let isSpeaking = false;
+    let ws, audioContext, scriptNode, micStream, registered = false;
 
     const statusEl = document.getElementById('status');
-    const timerEl = document.getElementById('timer');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const conv = document.getElementById('conversation');
-    const refreshBtn = document.getElementById('refreshBtn');
+    const typingEl = document.getElementById('typing');
+    const userTextInput = document.getElementById('userText');
+    const sendTextBtn = document.getElementById('sendTextBtn');
 
+    // --- Mic pause/resume flags ---
+    let micPaused = false;
+
+    function pauseMic() { micPaused = true; }
+    function resumeMic() { micPaused = false; }
+
+    // --- Conversation log ---
     function log(role, text) {
       const msg = document.createElement('div');
       msg.classList.add('msg', role.toLowerCase());
       msg.innerHTML = `<div class="bubble"><strong>${role}:</strong> ${text}</div>`;
-      conv.appendChild(msg);
-      conv.scrollTop = conv.scrollHeight;
+      conv.insertBefore(msg, typingEl);
+      conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
     }
 
     function connectWS() {
       statusEl.innerText = 'Connecting...';
-      refreshBtn.style.display = 'none';
-      startBtn.disabled = true;
-
       ws = new WebSocket(WS_URL);
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
         statusEl.innerText = 'Connected ✅';
         startBtn.disabled = false;
-        refreshBtn.style.display = 'none';
       };
 
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           const msg = JSON.parse(ev.data);
-
           if (msg.type === 'registered') {
             registered = true;
             statusEl.innerText = 'Session registered ✅';
-            startTimer();
-            conv.classList.add('active');
           } else if (msg.type === 'transcript') {
             log('User', msg.text);
           } else if (msg.type === 'bot_text') {
             log('Bot', msg.text);
-            speak(msg.text);
+          } else if (msg.type === 'bot_audio') {
+            playBotAudio(msg.audio);
           }
         }
       };
@@ -256,19 +172,12 @@
         registered = false;
         startBtn.disabled = true;
         stopBtn.style.display = 'none';
-        conv.classList.remove('active');
-        stopTimer();
-        refreshBtn.style.display = 'inline-block'; // Show refresh button
       };
     }
 
     connectWS();
 
-    // Refresh button → reconnect
-    refreshBtn.addEventListener('click', () => {
-      connectWS();
-    });
-
+    // --- Buttons ---
     startBtn.addEventListener('click', async () => {
       ws.send(JSON.stringify({ type: 'register' }));
       statusEl.innerText = 'Registering session...';
@@ -284,30 +193,34 @@
       statusEl.innerText = 'Call ended';
       stopBtn.style.display = 'none';
       startBtn.style.display = 'inline-block';
-      stopTimer();
     });
 
+    sendTextBtn.addEventListener('click', () => {
+      const text = userTextInput.value.trim();
+      if (text && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'user_text', text }));
+        userTextInput.value = '';
+      }
+    });
+
+    // --- Pause mic while typing ---
+    userTextInput.addEventListener("focus", () => pauseMic());
+    userTextInput.addEventListener("blur", () => resumeMic());
+
+    // --- Mic stream ---
     async function startMic() {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
       const source = audioContext.createMediaStreamSource(micStream);
-
       scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
       scriptNode.onaudioprocess = (e) => {
-        if (isSpeaking) return;
+        if (micPaused) return;
         const float32 = e.inputBuffer.getChannelData(0);
         const buf = floatTo16BitPCM(float32);
         if (ws.readyState === WebSocket.OPEN && registered) {
           ws.send(buf);
         }
       };
-
       source.connect(scriptNode);
       scriptNode.connect(audioContext.destination);
       statusEl.innerText = 'Mic recording…';
@@ -330,29 +243,31 @@
       return buffer;
     }
 
-    function speak(text) {
-      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-      isSpeaking = true;
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.onend = () => isSpeaking = false;
-      utter.onerror = () => isSpeaking = false;
-      window.speechSynthesis.speak(utter);
-    }
+    // --- Play bot audio instantly ---
+    function playBotAudio(base64) {
+      typingEl.style.display = 'block';
+      const audioData = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
 
-    function startTimer() {
-      startTime = Date.now();
-      timerInterval = setInterval(() => {
-        const diff = Date.now() - startTime;
-        const m = String(Math.floor(diff / 60000)).padStart(2, '0');
-        const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-        timerEl.innerText = `${m}:${s}`;
-      }, 1000);
-    }
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioContext.decodeAudioData(audioData.slice(0)).then(buffer => {
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
 
-    function stopTimer() {
-      if (timerInterval) clearInterval(timerInterval);
-      timerEl.innerText = '00:00';
+        // Pause mic while bot is speaking
+        pauseMic();
+        source.onended = () => {
+          typingEl.style.display = 'none';
+          resumeMic();
+        };
+
+        source.start(0);
+      }).catch(err => console.error('Audio decode error', err));
     }
   </script>
 </body>
 </html>
+
+
+
+

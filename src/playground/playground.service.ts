@@ -1,3 +1,5 @@
+// src/playground/playground.service.ts
+
 import { Injectable, Logger } from '@nestjs/common';
 import WebSocket from 'ws';
 import { LlmService } from '../llm/llm.service';
@@ -8,8 +10,6 @@ import { PlaygroundWavWriter } from 'src/utils/wav-writer-playground';
 import { mulawToPCM16 } from 'src/utils/audio-utils';
 import { LatencyTracker } from 'src/utils/latency.util';
 
-
-// A session represents one connected WS client + resources
 interface PlaygroundSession {
   client: WebSocket;
   dgSocket: WebSocket;
@@ -17,6 +17,7 @@ interface PlaygroundSession {
   ffmpeg?: ChildProcessWithoutNullStreams;
   silenceInterval?: NodeJS.Timeout;
   wavWriter?: PlaygroundWavWriter;
+  hasGreeted?: boolean; // Track if the bot has greeted the user
 }
 
 @Injectable()
@@ -47,7 +48,6 @@ export class PlaygroundService {
       }
 
       const silenceInterval = this.startSilence(dgSocket);
-
       const filename = `recordings/playground_${Date.now()}.wav`;
       const wavWriter = new PlaygroundWavWriter(filename);
 
@@ -95,7 +95,6 @@ export class PlaygroundService {
     if (sess.directStream) {
       if (sess.dgSocket.readyState === WebSocket.OPEN) {
         sess.dgSocket.send(data);
-        this.logger.debug(`➡️ Sent ${data.length} bytes DIRECT to Deepgram`);
       }
     } else {
       if (!sess.ffmpeg) {
@@ -107,6 +106,35 @@ export class PlaygroundService {
     }
 
     tracker.end();
+  }
+
+  async handleUserText(client: WebSocket, text: string) {
+    const session = this.sessions.get(client);
+    if (!session) {
+      this.logger.warn('No active session for typed text');
+      return;
+    }
+
+    session.client.send(JSON.stringify({ type: 'transcript', text }));
+
+    try {
+      const botReply = await this.llm.generateResponse([
+        {
+          role: 'system',
+          content: `You are a professional hotel booking assistant for Axion Hotel in Lake City.
+Help users with bookings, availability, check-in/out, and services.
+Keep replies polite, short, and receptionist-style.`,
+        },
+        { role: 'user', content: text.trim() },
+      ]);
+
+      session.client.send(JSON.stringify({ type: 'bot_text', text: botReply }));
+
+      const base64Audio = await this.audioService.textToAudio(botReply);
+      session.client.send(JSON.stringify({ type: 'bot_audio', audio: base64Audio }));
+    } catch (e) {
+      this.logger.error('Error handling user text', e as any);
+    }
   }
 
   private createFfmpegProcess(
@@ -132,7 +160,6 @@ export class PlaygroundService {
       '1',
       'pipe:1',
     ];
-    this.logger.debug(`Spawning ffmpeg: ${args.join(' ')}`);
     const ffmpeg = spawn('ffmpeg', args);
 
     ffmpeg.stdout.on('data', (chunk: Buffer) => {
@@ -161,69 +188,88 @@ export class PlaygroundService {
     }, 5000);
   }
 
-  private handleDeepgramTranscript(client: WebSocket, transcript: string) {
-    this.logger.log(`Deepgram transcript: "${transcript}"`);
-    const session = this.sessions.get(client);
-    if (!session) return;
 
+
+private handleDeepgramTranscript(client: WebSocket, transcript: string) {
+  this.logger.log(`Deepgram transcript: "${transcript}"`);
+  const session = this.sessions.get(client);
+  if (!session) return;
+
+  try {
+    session.client.send(
+      JSON.stringify({ type: 'transcript', text: transcript }),
+    );
+  } catch { }
+
+  (async () => {
     try {
-      session.client.send(
-        JSON.stringify({ type: 'transcript', text: transcript }),
-      );
-    } catch { }
+      const botReplyRaw = await this.llm.generateResponse([
+        {
+          role: 'system',
+          content: `You are a professional hotel booking assistant for Axion Hotel in Lake City.
+Say "Welcome to Axion Hotel in Lake City" only once at the very start of the conversation.
+After the first message, strictly DO NOT say "Welcome to Axion Hotel" or any similar greeting again.
+Focus only on answering the user's booking or service questions politely and concisely.`,
+        },
+        { role: 'user', content: transcript.trim() },
+      ]);
 
-    (async () => {
-      try {
-        // 1️⃣ LLM Response Latency
-        const botReply = await LatencyTracker.track(
-  'LLM.generateResponse',
-  () =>
-    this.llm.generateResponse([
-      {
-        role: 'system',
-        content: `You are a professional hotel booking assistant for Axion Hotel in Lake City.
-Help users with bookings, availability, check-in/out, and services.
-Keep replies polite, short, and receptionist-style.`,
-      },
-      { role: 'user', content: transcript.trim() }, // 🧹 clean transcript
-    ]),
-);
+      let botReply = botReplyRaw;
 
-        session.client.send(
-          JSON.stringify({ type: 'bot_text', text: botReply }),
-        );
-
-        // 2️⃣ TTS Latency
-        const base64Audio = await LatencyTracker.track(
-          'TTS.textToAudio',
-          () => this.audioService.textToAudio(botReply),
-        );
-
-        const filename = `playground_reply_${Date.now()}.mulaw`;
-        await this.audioService.saveAudioToFile(base64Audio, filename);
-
-        // 3️⃣ Audio Convert + Write Latency
-        if (session.wavWriter) {
-          await LatencyTracker.track('BotAudio.writePCM16', async () => {
-            const botBufMulaw = Buffer.from(base64Audio, 'base64');
-            const botBufPcm16 = await mulawToPCM16(botBufMulaw);
-            session.wavWriter!.writePCM16(botBufPcm16);
-          });
-        }
-
-
-
-        // 4️⃣ Send to client
-        const sendTracker = new LatencyTracker('Send bot_audio → Client');
-        session.client.send(
-          JSON.stringify({ type: 'bot_audio', audio: base64Audio }),
-        );
-        sendTracker.end();
-      } catch (e) {
-        this.logger.error('LLM/TTS error', e as any);
+      // ✅ Only allow greeting once
+      if (!session.hasGreeted) {
+        session.hasGreeted = true;
+      } else {
+        // Strip repeated greetings
+        botReply = botReply.replace(/welcome to axion hotel.*?(\.|!)/gi, '');
+        botReply = botReply.replace(/hello[!.,]?\s*/i, '');
+        botReply = botReply.replace(/good (morning|afternoon|evening).*?(\.|!)/gi, '');
       }
-    })();
-  }
+
+      botReply = botReply.trim();
+      if (!botReply) {
+        botReply = "Sure, could you please provide more details?";
+      }
+
+      // Send bot text to client
+      session.client.send(
+        JSON.stringify({ type: 'bot_text', text: botReply }),
+      );
+
+      // Generate audio from text
+      const base64Audio = await this.audioService.textToAudio(botReply);
+
+      // ✅ Immediately send audio to client
+      session.client.send(
+        JSON.stringify({ type: 'bot_audio', audio: base64Audio }),
+      );
+
+      // ✅ Background task: save to file + PCM16 conversion
+      (async () => {
+        try {
+          const filename = `playground_reply_${Date.now()}.mulaw`;
+          await this.audioService.saveAudioToFile(base64Audio, filename);
+
+          if (session.wavWriter) {
+            await LatencyTracker.track('BotAudio.writePCM16', async () => {
+              const botBufMulaw = Buffer.from(base64Audio, 'base64');
+              const botBufPcm16 = await mulawToPCM16(botBufMulaw);
+              session.wavWriter!.writePCM16(botBufPcm16);
+            });
+          }
+        } catch (e) {
+          this.logger.error('Audio save/write error', e as any);
+        }
+      })();
+
+    } catch (e) {
+      this.logger.error('LLM/TTS error', e as any);
+    }
+  })();
+}
+
+
+
 
   endSession(client: WebSocket) {
     const tracker = new LatencyTracker('Playground.endSession');
@@ -245,3 +291,11 @@ Keep replies polite, short, and receptionist-style.`,
     tracker.end();
   }
 }
+
+
+
+
+
+
+
+
