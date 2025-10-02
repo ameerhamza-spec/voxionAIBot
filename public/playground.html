@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -115,8 +115,8 @@
   </div>
 
   <script>
-    // const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
-    const WS_URL = "wss://firtqx9z8x.ap-south-1.awsapprunner.com/playground";
+    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
+    // const WS_URL = "wss://firtqx9z8x.ap-south-1.awsapprunner.com/playground";
     let ws, audioContext, scriptNode, micStream, registered = false;
 
     const statusEl = document.getElementById('status');
@@ -271,4 +271,935 @@
 
 
 
+ -->
+
+
+
+
+
+ <!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Playground Bot (WS Realtime)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-start;
+      height:100vh;
+      margin:0;
+      padding:20px;
+    }
+    h2 { margin-top:10px; }
+
+    #status { font-weight:600; }
+
+    #controls {
+      margin:15px 0;
+      display:flex;
+      gap:15px;
+    }
+
+    button {
+      padding:12px 20px;
+      border:none;
+      border-radius:25px;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:600;
+      transition:all .3s ease;
+      box-shadow:0 4px 10px rgba(0,0,0,0.2);
+    }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    #startBtn { background:#28c76f; color:#fff; }
+    #startBtn:hover:not(:disabled) { background:#20a65b; }
+    #stopBtn { background:#ff4d4d; color:#fff; }
+    #stopBtn:hover { background:#d93636; }
+    #sendTextBtn { background:#4dabf7; color:#fff; }
+    #sendTextBtn:hover { background:#1c7ed6; }
+
+    #conversation {
+      background:white;
+      color:#333;
+      border-radius:16px;
+      padding:20px;
+      height:400px;
+      width:500px;
+      overflow-y:auto;
+      margin-top:10px;
+      box-shadow:0 6px 20px rgba(0,0,0,0.25);
+      display:flex;
+      flex-direction:column;
+    }
+    .msg { margin:8px 0; display:flex; }
+    .msg.bot { justify-content:flex-start; }
+    .msg.user { justify-content:flex-end; }
+    .bubble {
+      padding:10px 15px;
+      border-radius:18px;
+      max-width:70%;
+      font-size:15px;
+    }
+    .bot .bubble { background:#e0e0e0; color:#333; border-bottom-left-radius:0; }
+    .user .bubble { background:#28c76f; color:#fff; border-bottom-right-radius:0; }
+
+    #typing {
+      font-style:italic;
+      color:#666;
+      font-size:14px;
+      margin:5px 0 0 5px;
+      display:none;
+    }
+
+    /* Input box pinned under chat */
+    #textInputBox {
+      margin-top:8px;
+      display:flex;
+      width:500px;
+      gap:10px;
+    }
+    #userText {
+      flex:1;
+      padding:12px;
+      border-radius:25px;
+      border:none;
+      font-size:15px;
+      outline:none;
+    }
+
+    /* Audio visualization */
+    .audio-indicator {
+      display: inline-block;
+      width: 20px;
+      height: 15px;
+      margin-left: 10px;
+      position: relative;
+    }
+    
+    .audio-bar {
+      display: inline-block;
+      width: 2px;
+      background: #28c76f;
+      margin: 0 1px;
+      animation: audioPulse 0.8s infinite alternate;
+    }
+    
+    @keyframes audioPulse {
+      from { height: 2px; }
+      to { height: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <h2>Playground Bot 🤖</h2>
+  <div>Status: <span id="status">Connecting...</span></div>
+
+  <div id="controls">
+    <button id="startBtn" disabled>📞 Call</button>
+    <button id="stopBtn" style="display:none;">🔴 End</button>
+  </div>
+
+  <div id="conversation">
+    <div class="msg bot"><div class="bubble"><strong>Bot:</strong> Hello! Press Call or type to start.</div></div>
+    <div id="typing">Bot is speaking…</div>
+  </div>
+
+  <div id="textInputBox">
+    <input id="userText" type="text" placeholder="Type your message...">
+    <button id="sendTextBtn">Send</button>
+  </div>
+
+  <script>
+    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
+    // const WS_URL = "wss://firtqx9z8x.ap-south-1.awsapprunner.com/playground";
+    let ws, audioContext, scriptNode, micStream, registered = false;
+
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const conv = document.getElementById('conversation');
+    const typingEl = document.getElementById('typing');
+    const userTextInput = document.getElementById('userText');
+    const sendTextBtn = document.getElementById('sendTextBtn');
+
+    // --- Audio streaming variables ---
+    let audioQueue = [];
+    let isPlayingAudio = false;
+    let currentAudioSource = null;
+    let audioChunks = [];
+    let isStreamingAudio = false;
+
+    // --- Mic pause/resume flags ---
+    let micPaused = false;
+
+    function pauseMic() { micPaused = true; }
+    function resumeMic() { 
+      // Only resume if we're not currently playing audio
+      if (!isPlayingAudio) {
+        micPaused = false; 
+      }
+    }
+
+    // --- Conversation log ---
+    function log(role, text) {
+      const msg = document.createElement('div');
+      msg.classList.add('msg', role.toLowerCase());
+      
+      // Add audio indicator for bot messages
+      let indicatorHtml = '';
+      if (role === 'Bot' && isStreamingAudio) {
+        indicatorHtml = '<span class="audio-indicator" id="audioIndicator"></span>';
+      }
+      
+      msg.innerHTML = `<div class="bubble"><strong>${role}:</strong> ${text}${indicatorHtml}</div>`;
+      conv.insertBefore(msg, typingEl);
+      conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+
+      // Add audio bars to indicator
+      if (role === 'Bot' && isStreamingAudio) {
+        const indicator = document.getElementById('audioIndicator');
+        if (indicator) {
+          indicator.innerHTML = '';
+          for (let i = 0; i < 3; i++) {
+            const bar = document.createElement('span');
+            bar.className = 'audio-bar';
+            bar.style.animationDelay = `${i * 0.2}s`;
+            indicator.appendChild(bar);
+          }
+        }
+      }
+    }
+
+    function connectWS() {
+      statusEl.innerText = 'Connecting...';
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        statusEl.innerText = 'Connected ✅';
+        startBtn.disabled = false;
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          handleServerMessage(msg);
+        }
+      };
+
+      ws.onclose = () => {
+        statusEl.innerText = 'Disconnected';
+        registered = false;
+        startBtn.disabled = true;
+        stopBtn.style.display = 'none';
+        resetAudioState();
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        statusEl.innerText = 'Connection error';
+      };
+    }
+
+    function handleServerMessage(msg) {
+      switch (msg.type) {
+        case 'registered':
+          registered = true;
+          statusEl.innerText = 'Session registered ✅';
+          break;
+          
+        case 'transcript':
+          log('User', msg.text);
+          break;
+          
+        case 'bot_text':
+          log('Bot', msg.text);
+          // Show typing indicator when bot text arrives
+          showTypingIndicator(true);
+          break;
+          
+        case 'bot_audio':
+          // Fallback for non-streaming audio
+          playCompleteAudio(msg.audio);
+          break;
+          
+        case 'bot_audio_chunk':
+          handleAudioChunk(msg.audio, msg.final);
+          break;
+          
+        case 'error':
+          console.error('Server error:', msg.message);
+          statusEl.innerText = `Error: ${msg.message}`;
+          break;
+      }
+    }
+
+    function handleAudioChunk(audioChunk, isFinal) {
+      if (audioChunk) {
+        audioChunks.push(audioChunk);
+        
+        // Play chunk immediately if it's the first one
+        if (audioChunks.length === 1) {
+          playAudioStream();
+        }
+      }
+
+      if (isFinal) {
+        console.log('Audio streaming completed');
+        isStreamingAudio = false;
+        hideAudioIndicator();
+        
+        // Small delay to ensure last chunk is played
+        setTimeout(() => {
+          if (audioChunks.length === 0) {
+            showTypingIndicator(false);
+            resumeMic();
+          }
+        }, 500);
+      }
+    }
+
+    async function playAudioStream() {
+      if (isPlayingAudio || audioChunks.length === 0) return;
+
+      isPlayingAudio = true;
+      isStreamingAudio = true;
+      pauseMic();
+      showTypingIndicator(true);
+
+      while (audioChunks.length > 0) {
+        const chunk = audioChunks.shift();
+        await playAudioChunk(chunk);
+      }
+
+      isPlayingAudio = false;
+      
+      // Only resume mic if streaming is completely done
+      if (!isStreamingAudio) {
+        showTypingIndicator(false);
+        resumeMic();
+      }
+    }
+
+    async function playAudioChunk(base64Audio) {
+      return new Promise((resolve) => {
+        try {
+          if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          }
+
+          // Convert base64 to ArrayBuffer
+          const binaryString = atob(base64Audio);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          // Create blob and object URL
+          const blob = new Blob([bytes], { type: 'audio/wav' });
+          const audioUrl = URL.createObjectURL(blob);
+
+          const audio = new Audio();
+          audio.src = audioUrl;
+          
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+          };
+          
+          audio.onerror = (error) => {
+            console.error('Audio chunk play error:', error);
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+          };
+          
+          audio.play().catch(e => {
+            console.log('Audio play failed, continuing:', e);
+            resolve();
+          });
+          
+        } catch (error) {
+          console.error('Audio chunk processing error:', error);
+          resolve();
+        }
+      });
+    }
+
+    function playCompleteAudio(base64Audio) {
+      try {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        const binaryString = atob(base64Audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const blob = new Blob([bytes], { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(blob);
+
+        pauseMic();
+        showTypingIndicator(true);
+
+        const audio = new Audio();
+        audio.src = audioUrl;
+        
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          showTypingIndicator(false);
+          resumeMic();
+        };
+        
+        audio.onerror = (error) => {
+          console.error('Complete audio play error:', error);
+          URL.revokeObjectURL(audioUrl);
+          showTypingIndicator(false);
+          resumeMic();
+        };
+        
+        audio.play().catch(e => {
+          console.error('Complete audio play failed:', e);
+          showTypingIndicator(false);
+          resumeMic();
+        });
+        
+      } catch (error) {
+        console.error('Complete audio processing error:', error);
+        showTypingIndicator(false);
+        resumeMic();
+      }
+    }
+
+    function showTypingIndicator(show) {
+      if (show) {
+        typingEl.style.display = 'block';
+        conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+      } else {
+        typingEl.style.display = 'none';
+      }
+    }
+
+    function hideAudioIndicator() {
+      const indicator = document.getElementById('audioIndicator');
+      if (indicator) {
+        indicator.style.display = 'none';
+      }
+    }
+
+    function resetAudioState() {
+      audioChunks = [];
+      isPlayingAudio = false;
+      isStreamingAudio = false;
+      showTypingIndicator(false);
+      resumeMic();
+    }
+
+    connectWS();
+
+    // --- Buttons ---
+    startBtn.addEventListener('click', async () => {
+      ws.send(JSON.stringify({ type: 'register' }));
+      statusEl.innerText = 'Registering session...';
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      await startMic();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      ws.send(JSON.stringify({ type: 'stop' }));
+      stopMic();
+      registered = false;
+      statusEl.innerText = 'Call ended';
+      stopBtn.style.display = 'none';
+      startBtn.style.display = 'inline-block';
+      resetAudioState();
+    });
+
+    sendTextBtn.addEventListener('click', () => {
+      const text = userTextInput.value.trim();
+      if (text && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'user_text', text }));
+        userTextInput.value = '';
+      }
+    });
+
+    userTextInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        sendTextBtn.click();
+      }
+    });
+
+    // --- Pause mic while typing ---
+    userTextInput.addEventListener("focus", () => pauseMic());
+    userTextInput.addEventListener("blur", () => resumeMic());
+
+    // --- Mic stream ---
+    async function startMic() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            sampleRate: 48000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          } 
+        });
+        
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        const source = audioContext.createMediaStreamSource(micStream);
+        scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        scriptNode.onaudioprocess = (e) => {
+          if (micPaused || isPlayingAudio) return;
+          const float32 = e.inputBuffer.getChannelData(0);
+          const buf = floatTo16BitPCM(float32);
+          if (ws.readyState === WebSocket.OPEN && registered) {
+            ws.send(buf);
+          }
+        };
+        
+        source.connect(scriptNode);
+        scriptNode.connect(audioContext.destination);
+        statusEl.innerText = 'Mic recording…';
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        statusEl.innerText = 'Mic access denied';
+      }
+    }
+
+    function stopMic() {
+      if (scriptNode) { 
+        scriptNode.disconnect(); 
+        scriptNode.onaudioprocess = null; 
+      }
+      if (audioContext) audioContext.close();
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
+      resetAudioState();
+    }
+
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      let offset = 0;
+      for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return buffer;
+    }
+
+    // Handle page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // Page is hidden, pause audio if playing
+        if (isPlayingAudio) {
+          // You might want to implement audio pausing here
+        }
+      }
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      stopMic();
+    });
+
+  </script>
+</body>
+</html> -->
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Playground Bot (WS Realtime)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-start;
+      height:100vh;
+      margin:0;
+      padding:20px;
+    }
+    h2 { margin-top:10px; }
+    #status { font-weight:600; }
+    #controls { margin:15px 0; display:flex; gap:15px; }
+    button {
+      padding:12px 20px;
+      border:none;
+      border-radius:25px;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:600;
+      transition:all .3s ease;
+      box-shadow:0 4px 10px rgba(0,0,0,0.2);
+    }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    #startBtn { background:#28c76f; color:#fff; }
+    #startBtn:hover:not(:disabled) { background:#20a65b; }
+    #stopBtn { background:#ff4d4d; color:#fff; }
+    #stopBtn:hover { background:#d93636; }
+    #sendTextBtn { background:#4dabf7; color:#fff; }
+    #sendTextBtn:hover { background:#1c7ed6; }
+
+    #conversation {
+      background:white;
+      color:#333;
+      border-radius:16px;
+      padding:20px;
+      height:400px;
+      width:500px;
+      overflow-y:auto;
+      margin-top:10px;
+      box-shadow:0 6px 20px rgba(0,0,0,0.25);
+      display:flex;
+      flex-direction:column;
+    }
+    .msg { margin:8px 0; display:flex; }
+    .msg.bot { justify-content:flex-start; }
+    .msg.user { justify-content:flex-end; }
+    .bubble {
+      padding:10px 15px;
+      border-radius:18px;
+      max-width:70%;
+      font-size:15px;
+    }
+    .bot .bubble { background:#e0e0e0; color:#333; border-bottom-left-radius:0; }
+    .user .bubble { background:#28c76f; color:#fff; border-bottom-right-radius:0; }
+    #typing {
+      font-style:italic;
+      color:#666;
+      font-size:14px;
+      margin:5px 0 0 5px;
+      display:none;
+    }
+
+    #textInputBox { margin-top:8px; display:flex; width:500px; gap:10px; }
+    #userText {
+      flex:1;
+      padding:12px;
+      border-radius:25px;
+      border:none;
+      font-size:15px;
+      outline:none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Playground Bot 🤖</h2>
+  <div>Status: <span id="status">Connecting...</span></div>
+
+  <div id="controls">
+    <button id="startBtn" disabled>📞 Call</button>
+    <button id="stopBtn" style="display:none;">🔴 End</button>
+  </div>
+
+  <div id="conversation">
+    <div class="msg bot"><div class="bubble"><strong>Bot:</strong> Hello! Press Call or type to start.</div></div>
+    <div id="typing">Bot is speaking…</div>
+  </div>
+
+  <div id="textInputBox">
+    <input id="userText" type="text" placeholder="Type your message...">
+    <button id="sendTextBtn">Send</button>
+  </div>
+
+  <script>
+    const WS_URL = "wss://e327d5b72b08.ngrok-free.app/playground";
+    let ws, audioContext, scriptNode, micStream, registered = false;
+
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const conv = document.getElementById('conversation');
+    const typingEl = document.getElementById('typing');
+    const userTextInput = document.getElementById('userText');
+    const sendTextBtn = document.getElementById('sendTextBtn');
+
+    // Mic pause/resume flags
+    let micPaused = false;
+    function pauseMic() { micPaused = true; }
+    function resumeMic() { if (!playing) micPaused = false; }
+
+    // Conversation log
+    function log(role, text) {
+      const msg = document.createElement('div');
+      msg.classList.add('msg', role.toLowerCase());
+      msg.innerHTML = `<div class="bubble"><strong>${role}:</strong> ${text}</div>`;
+      conv.insertBefore(msg, typingEl);
+      conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+    }
+
+    // ---------------- WS ----------------
+    function connectWS() {
+      statusEl.innerText = 'Connecting...';
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        statusEl.innerText = 'Connected ✅';
+        startBtn.disabled = false;
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          handleServerMessage(msg);
+        }
+      };
+
+      ws.onclose = () => {
+        statusEl.innerText = 'Disconnected';
+        registered = false;
+        startBtn.disabled = true;
+        stopBtn.style.display = 'none';
+        resetAudioState();
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        statusEl.innerText = 'Connection error';
+      };
+    }
+
+    // ---------------- Audio Streaming ----------------
+    let playing = false;
+    let queue = [];
+    let nextStartTime = 0;
+    let isStreamingAudio = false;
+
+    function handleServerMessage(msg) {
+      switch (msg.type) {
+        case 'registered':
+          registered = true;
+          statusEl.innerText = 'Session registered ✅';
+          break;
+        case 'transcript':
+          log('User', msg.text);
+          break;
+        case 'bot_text':
+          log('Bot', msg.text);
+          showTypingIndicator(true);
+          break;
+        case 'bot_audio_chunk':
+          handleAudioChunk(msg.audio, msg.final);
+          break;
+        case 'error':
+          console.error('Server error:', msg.message);
+          statusEl.innerText = `Error: ${msg.message}`;
+          break;
+      }
+    }
+
+    function handleAudioChunk(base64Audio, isFinal) {
+      if (!base64Audio) {
+        if (isFinal) {
+          console.log("Final audio marker ✅");
+          isStreamingAudio = false;
+          setTimeout(() => {
+            if (queue.length === 0 && !playing) {
+              showTypingIndicator(false);
+              resumeMic();
+            }
+          }, 300);
+        }
+        return;
+      }
+
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+      }
+
+      const pcm16 = muLawToPCM16(base64Audio);
+      const float32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) {
+        float32[i] = pcm16[i] / 32768;
+      }
+
+      const audioBuffer = audioContext.createBuffer(1, float32.length, 8000);
+      audioBuffer.copyToChannel(float32, 0);
+
+      queue.push(audioBuffer);
+      if (!playing) playAudioStream();
+
+      if (isFinal) {
+        console.log("Bot audio stream finished ✅");
+        isStreamingAudio = false;
+      }
+    }
+
+    async function playAudioStream() {
+      if (queue.length === 0) { playing = false; return; }
+      playing = true; pauseMic(); showTypingIndicator(true);
+
+      while (queue.length > 0) {
+        const buffer = queue.shift();
+        await playAudioChunk(buffer);
+      }
+
+      playing = false;
+      if (!isStreamingAudio) {
+        showTypingIndicator(false);
+        resumeMic();
+      }
+    }
+
+    function playAudioChunk(buffer) {
+      return new Promise((resolve) => {
+        try {
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+
+          const now = audioContext.currentTime;
+          if (nextStartTime < now) nextStartTime = now;
+          source.start(nextStartTime);
+          nextStartTime += buffer.duration;
+
+          source.onended = () => resolve();
+        } catch (err) {
+          console.error("Error playing chunk:", err);
+          resolve();
+        }
+      });
+    }
+
+    function showTypingIndicator(show) {
+      typingEl.style.display = show ? 'block' : 'none';
+      if (show) conv.scrollTo({ top: conv.scrollHeight, behavior: 'smooth' });
+    }
+
+    function resetAudioState() {
+      queue = [];
+      playing = false;
+      isStreamingAudio = false;
+      showTypingIndicator(false);
+      resumeMic();
+    }
+
+    connectWS();
+
+    // ---------------- Buttons ----------------
+    startBtn.addEventListener('click', async () => {
+      ws.send(JSON.stringify({ type: 'register' }));
+      statusEl.innerText = 'Registering session...';
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      await startMic();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      ws.send(JSON.stringify({ type: 'stop' }));
+      stopMic();
+      registered = false;
+      statusEl.innerText = 'Call ended';
+      stopBtn.style.display = 'none';
+      startBtn.style.display = 'inline-block';
+      resetAudioState();
+    });
+
+    sendTextBtn.addEventListener('click', () => {
+      const text = userTextInput.value.trim();
+      if (text && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'user_text', text }));
+        userTextInput.value = '';
+      }
+    });
+
+    userTextInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendTextBtn.click(); });
+    userTextInput.addEventListener("focus", () => pauseMic());
+    userTextInput.addEventListener("blur", () => resumeMic());
+
+    // ---------------- Mic ----------------
+    async function startMic() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true } 
+        });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        const source = audioContext.createMediaStreamSource(micStream);
+        scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+
+        scriptNode.onaudioprocess = (e) => {
+          if (micPaused || playing) return;
+          const float32 = e.inputBuffer.getChannelData(0);
+          const buf = floatTo16BitPCM(float32);
+          if (ws.readyState === WebSocket.OPEN && registered) ws.send(buf);
+        };
+
+        source.connect(scriptNode);
+        scriptNode.connect(audioContext.destination);
+        statusEl.innerText = 'Mic recording…';
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        statusEl.innerText = 'Mic access denied';
+      }
+    }
+
+    function stopMic() {
+      if (scriptNode) { scriptNode.disconnect(); scriptNode.onaudioprocess = null; }
+      if (audioContext) audioContext.close();
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
+      resetAudioState();
+    }
+
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      let offset = 0;
+      for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return buffer;
+    }
+
+    // ---------- µ-law decode ----------
+    function muLawToPCM16(base64Data) {
+      const binary = atob(base64Data);
+      const u8 = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        u8[i] = binary.charCodeAt(i);
+      }
+      const pcm16 = new Int16Array(u8.length);
+      for (let i = 0; i < u8.length; i++) {
+        pcm16[i] = mulawDecode(u8[i]);
+      }
+      return pcm16;
+    }
+
+    function mulawDecode(uVal) {
+      uVal = ~uVal;
+      const sign = (uVal & 0x80) ? -1 : 1;
+      const exponent = (uVal >> 4) & 0x07;
+      const mantissa = uVal & 0x0F;
+      let sample = ((mantissa << 1) + 33) << (exponent + 2);
+      return sign * sample;
+    }
+
+    // Cleanup
+    window.addEventListener('beforeunload', () => { if (ws && ws.readyState === WebSocket.OPEN) ws.close(); stopMic(); });
+  </script>
+</body>
+</html>
 
