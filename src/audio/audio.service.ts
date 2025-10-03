@@ -10,7 +10,9 @@ export class AudioService {
   private readonly responseCache = new Map<string, string>();
 
   /**
-   * Convert text to audio using Deepgram TTS (Standard - for backward compatibility)
+   * Convert text into audio using Deepgram TTS (Standard Model)
+   * - Caches responses to avoid duplicate API calls
+   * - Returns audio as base64-encoded string
    */
   async textToAudio(text: string): Promise<string> {
     const cacheKey = text.toLowerCase().trim();
@@ -56,7 +58,10 @@ export class AudioService {
   }
 
   /**
-   * Stream text to audio using Deepgram streaming TTS
+   * Stream text to audio using Deepgram TTS
+   * - Reads chunks from streaming API response
+   * - Sends each audio chunk immediately via callback
+   * - Caches final full audio for future use
    */
   async streamTextToAudio(text: string, onAudioChunk: (chunk: string, isFinal: boolean) => void): Promise<void> {
     this.logger.log(`Starting streaming TTS for text: ${text.substring(0, 50)}...`);
@@ -113,8 +118,11 @@ export class AudioService {
     }
   }
 
-  /**
-   * Alternative streaming with lower latency model
+   /**
+   * Stream text to audio using a faster Deepgram TTS model
+   * - Provides lower latency compared to standard streaming
+   * - Sends audio chunks in real-time
+   * - Useful for quick bot replies
    */
   async streamTextToAudioFast(text: string, onAudioChunk: (chunk: string, isFinal: boolean) => void): Promise<void> {
     this.logger.log(`Starting FAST streaming TTS for text: ${text.substring(0, 50)}...`);
@@ -169,6 +177,12 @@ export class AudioService {
     }
   }
 
+    /**
+   * Save generated base64 mulaw audio into a file
+   * - Ensures recordings directory exists
+   * - Writes audio buffer to file
+   * - Returns file path of saved recording
+   */
   async saveAudioToFile(base64Mulaw: string, filename: string) {
     const buffer = Buffer.from(base64Mulaw, 'base64');
     const outPath = path.join('recordings', filename);
@@ -183,7 +197,9 @@ export class AudioService {
   }
 
   /**
-   * Clear cache periodically to prevent memory issues
+   * Clear the audio response cache
+   * - Prevents memory bloat from repeated TTS responses
+   * - Logs how many items were cleared
    */
   clearCache(): void {
     const previousSize = this.responseCache.size;

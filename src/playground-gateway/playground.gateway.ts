@@ -15,6 +15,12 @@ export class PlaygroundGateway implements OnGatewayConnection, OnGatewayDisconne
 
   constructor(private readonly playgroundService: PlaygroundService) {}
 
+    /**
+   * Handle new WebSocket client connection
+   * - Logs connection
+   * - Sets up client message handler
+   * - Sends welcome message
+   */
   handleConnection(client: WebSocket) {
     this.logger.log('Client connected');
     this.setupClientMessageHandler(client);
@@ -28,11 +34,23 @@ export class PlaygroundGateway implements OnGatewayConnection, OnGatewayDisconne
     }
   }
 
+  /**
+   * Handle WebSocket client disconnect
+   * - Logs disconnection
+   * - Ends active session in PlaygroundService
+   */
   handleDisconnect(client: WebSocket) {
     this.logger.log('Client disconnected');
     this.playgroundService.endSession(client);
   }
 
+  /**
+   * Setup message handlers for a connected client
+   * - Parses incoming messages (text or binary)
+   * - Handles register/stop/user_text commands
+   * - Sends audio chunks to PlaygroundService
+   * - Cleans up session on close/error
+   */
   setupClientMessageHandler(client: WebSocket) {
     client.on('message', async (data: Data) => {
       try {
